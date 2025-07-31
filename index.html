@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Third Person Pawn Controller</title>
+    <style>
+        body { margin: 0; background: #333; overflow: hidden; }
+        #startButton { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px; font-size: 24px; cursor: pointer; }
+        #gameCanvas { display: none; width: 100%; height: 100vh; }
+        #menu {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 10;
+        }
+        #menu h2 { margin-top: 0; }
+        .menu-item { margin: 10px 0; }
+        .menu-item label { margin-right: 10px; }
+        .menu-item input[type="range"] { width: 300px; }
+    </style>
+</head>
+<body>
+    <button id="startButton">Start</button>
+    <canvas id="gameCanvas"></canvas>
+    <div id="menu">
+        <h2>Settings</h2>
+        <div class="menu-item">
+            <label for="thetaSensitivity">Horizontal Sensitivity:</label>
+            <input type="range" id="thetaSensitivity" min="0.0001" max="0.10" step="0.0002" value="0.02">
+        </div>
+        <div class="menu-item">
+            <label for="phiSensitivity">Vertical Sensitivity:</label>
+            <input type="range" id="phiSensitivity" min="0.0001" max="0.10" step="0.0002" value="0.002">
+        </div>
+        <button id="closeMenu">Close</button>
+    </div>
+    <script type="module" src="game.js"></script>
+</body>
+</html>
