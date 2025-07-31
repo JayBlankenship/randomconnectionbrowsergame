@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Red Player Test</title>
+    <style>
+        body { margin: 0; background: black; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="testCanvas"></canvas>
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.134.0';
+        import { createPlayerPawn } from './playerPawn.js';
+        
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('testCanvas') });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        // Test creating different colored players
+        const cyanPlayer = createPlayerPawn(false); // Normal human player
+        cyanPlayer.position.set(-5, 0, 0);
+        scene.add(cyanPlayer);
+        
+        const purplePlayer = createPlayerPawn(true); // AI player
+        purplePlayer.position.set(0, 0, 0);
+        scene.add(purplePlayer);
+        
+        const redPlayer = createPlayerPawn(false, 0xFF0000); // Red networked player
+        redPlayer.position.set(5, 0, 0);
+        scene.add(redPlayer);
+        
+        camera.position.set(0, 5, 10);
+        camera.lookAt(0, 0, 0);
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotate players to see them better
+            cyanPlayer.rotation.y += 0.01;
+            purplePlayer.rotation.y += 0.01;
+            redPlayer.rotation.y += 0.01;
+            
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        console.log('Test: Created cyan, purple, and red players');
+    </script>
+</body>
+</html>

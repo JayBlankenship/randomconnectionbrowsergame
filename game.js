@@ -4,6 +4,7 @@ import { createStar } from './star.js';
 import { createAIPlayer } from './ai.js';
 import { TerrainPlane } from './terrainPlane.js';
 import { TerrainGenerator } from './terrainGenerator.js'; // Import the new class
+import { NetworkedPlayerManager } from './networkedPlayer.js'; // Import networked player system
 
 const canvas = document.getElementById('gameCanvas');
 const startButton = document.getElementById('startButton');
@@ -53,6 +54,53 @@ function initGame() {
     // Create player pawn and star
     const playerPawn = createPlayerPawn(false); // false indicates human player
     scene.add(playerPawn);
+
+    // Initialize networked player manager for red replicated players
+    const networkedPlayerManager = new NetworkedPlayerManager(scene);
+    console.log('[Game] NetworkedPlayerManager initialized');
+    
+    // Set up network callbacks for player replication once connected
+    if (window.Network) {
+        // Handle incoming player state updates from other clients
+        window.Network.callbacks.handlePlayerState = (peerId, state) => {
+            console.log(`[Game] Received player state from ${peerId}:`, state);
+            networkedPlayerManager.updatePlayer(peerId, state);
+        };
+        
+        // Track when players join/leave the lobby to create/remove red players
+        const originalUpdateUI = window.Network.callbacks.updateUI;
+        window.Network.callbacks.updateUI = function(peers) {
+            // Call original updateUI if it exists
+            if (originalUpdateUI) {
+                originalUpdateUI(peers);
+            }
+            
+            // Only create red players if we're in a complete lobby
+            if (window.Network.isInCompleteLobby && window.Network.isInCompleteLobby()) {
+                const currentPeerIds = window.Network.getLobbyPeerIds();
+                const existingPeerIds = Array.from(networkedPlayerManager.networkedPlayers.keys());
+                
+                console.log(`[Game] Lobby complete! Current peers:`, currentPeerIds);
+                console.log(`[Game] Existing networked players:`, existingPeerIds);
+                
+                // Add new players as red replicated pawns
+                for (const peerId of currentPeerIds) {
+                    if (!existingPeerIds.includes(peerId)) {
+                        console.log(`[Game] Creating RED networked player for peer: ${peerId}`);
+                        networkedPlayerManager.addPlayer(peerId);
+                    }
+                }
+                
+                // Remove disconnected players
+                for (const peerId of existingPeerIds) {
+                    if (!currentPeerIds.includes(peerId)) {
+                        console.log(`[Game] Removing networked player for peer: ${peerId}`);
+                        networkedPlayerManager.removePlayer(peerId);
+                    }
+                }
+            }
+        };
+    }
 
     // Create multiple AI players
     const numberOfAIPlayers = 8; // Set this to your desired number
@@ -229,6 +277,34 @@ function initGame() {
             // Update player pawn and star animations
             playerPawn.update(deltaTime, animationTime);
 
+            // Broadcast our position to other players if we're in a complete lobby
+            if (window.Network && window.Network.isInCompleteLobby && window.Network.isInCompleteLobby()) {
+                // Create player state object
+                const playerState = {
+                    position: {
+                        x: playerPawn.position.x,
+                        y: playerPawn.position.y,
+                        z: playerPawn.position.z
+                    },
+                    rotation: {
+                        x: playerPawn.rotation.x,
+                        y: playerPawn.rotation.y,
+                        z: playerPawn.rotation.z
+                    },
+                    surgeActive: playerPawn.surgeActive || false
+                };
+                
+                // Throttle network updates to avoid spam (send every ~100ms)
+                const now = Date.now();
+                if (!window.lastNetworkUpdate || now - window.lastNetworkUpdate > 100) {
+                    window.Network.broadcastPlayerState(playerState);
+                    window.lastNetworkUpdate = now;
+                }
+            }
+
+            // Update red networked players (animate them smoothly)
+            networkedPlayerManager.update(deltaTime, animationTime);
+
             // Update all AI players
             aiPlayers.forEach(aiPlayer => {
                 aiPlayer.updateAI(deltaTime, animationTime);
@@ -238,6 +314,18 @@ function initGame() {
 
             // Generate new planes for both player and AI
             terrainGenerator.generateNeighboringPlanes(playerPawn.position);
+            
+            // Generate terrain around red networked players too
+            /*
+            const networkedPlayerPositions = networkedPlayerManager.getAllPositions();
+            networkedPlayerPositions.forEach(position => {
+                terrainGenerator.generateNeighboringPlanes(position);
+            });
+
+            // Remove distant planes (check distance to player, AIs, and networked players)
+            const allPositions = [playerPawn.position, ...aiPlayers.map(ai => ai.position), ...networkedPlayerPositions];
+            terrainGenerator.removeDistantPlanes(playerPawn.position, aiPlayers.concat(networkedPlayerPositions));
+            */
 
             // Remove distant planes (check distance to player and all AIs)
             terrainGenerator.removeDistantPlanes(playerPawn.position, aiPlayers);

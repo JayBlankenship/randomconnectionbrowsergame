@@ -568,6 +568,21 @@ const Network = {
         this.relayMessage(data, conn ? conn.peer : null);
       }
     }
+    
+    if (data.type === 'player_state') {
+      // Handle incoming player state updates
+      if (data.peerId !== this.myPeerId) { // Don't process our own state
+        if (this.callbacks.handlePlayerState) {
+          this.callbacks.handlePlayerState(data.peerId, data.state);
+        }
+        
+        // Relay to other peers if we're the host
+        if (this.isBase) {
+          this.relayPlayerState(data, conn ? conn.peer : null);
+        }
+      }
+    }
+    
     // Note: host_ready is handled in joinChain() baseConn.on('data') callback
     // Don't duplicate that logic here to avoid conflicts
   },
@@ -611,6 +626,24 @@ const Network = {
         } catch (err) {
           if (this.callbacks.logChainEvent) {
             this.callbacks.logChainEvent(`[Client-Relay] Failed to send to host: ${err.message}`, '#ff4444');
+          }
+        }
+      }
+    }
+  },
+
+  relayPlayerState(data, fromPeer) {
+    // Only the host relays player states to prevent loops
+    if (this.isBase && this.lobbyPeerConnections) {
+      let relayCount = 0;
+      for (const [peerId, conn] of Object.entries(this.lobbyPeerConnections)) {
+        // Don't send back to the sender, and only send to open connections
+        if (peerId !== fromPeer && conn && conn.open) {
+          try {
+            conn.send(data);
+            relayCount++;
+          } catch (err) {
+            console.warn(`[Host-PlayerStateRelay] Failed to send to ${peerId}:`, err);
           }
         }
       }
@@ -803,6 +836,65 @@ const Network = {
         this.tryBecomeBase();
       }
     }, 5000);
+  },
+
+  // --- PLAYER STATE SYNCHRONIZATION ---
+  
+  // Send player state to all connected peers
+  broadcastPlayerState(playerState) {
+    if (!this.paired && !this.isBase) return;
+    
+    const stateMessage = {
+      type: 'player_state',
+      peerId: this.myPeerId,
+      state: playerState,
+      timestamp: Date.now()
+    };
+    
+    // If we're the host, send to all connected clients
+    if (this.isBase && this.lobbyPeerConnections) {
+      for (const [peerId, conn] of Object.entries(this.lobbyPeerConnections)) {
+        if (conn && conn.open) {
+          try {
+            conn.send(stateMessage);
+          } catch (error) {
+            console.warn(`[Network] Failed to send player state to ${peerId}:`, error);
+          }
+        }
+      }
+    }
+    
+    // If we're a client, send to host (host will relay to other clients)
+    if (!this.isBase) {
+      const hostConnection = this.hostConn || this.baseConn;
+      if (hostConnection && hostConnection.open) {
+        try {
+          hostConnection.send(stateMessage);
+        } catch (error) {
+          console.warn(`[Network] Failed to send player state to host:`, error);
+        }
+      }
+    }
+  },
+  
+  // Get current lobby peer IDs (excluding self)
+  getLobbyPeerIds() {
+    const allPeers = [];
+    
+    if (this.isBase && this.lobbyConnectedPeers) {
+      // For host, return all connected clients (excluding self)
+      allPeers.push(...this.lobbyConnectedPeers.filter(peerId => peerId !== this.myPeerId));
+    } else if (this.paired && this.lobbyPeers) {
+      // For client, return all other players from lobby
+      allPeers.push(...this.lobbyPeers.filter(peerId => peerId !== this.myPeerId));
+    }
+    
+    return allPeers;
+  },
+  
+  // Check if we're in a complete lobby
+  isInCompleteLobby() {
+    return this.paired || (this.isBase && this.lobbyFull);
   }
 };
 

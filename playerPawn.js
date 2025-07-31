@@ -8,11 +8,18 @@ function pseudoPerlinNoise(t, seed) {
     return (a + b + c) / 3;
 }
 
-export function createPlayerPawn(isAI = false) {
-    const coneColor = isAI ? 0xFF00FF : 0x00FFFF;  // Define color once
+export function createPlayerPawn(isAI = false, color = null) {
+    // Determine color: custom color takes priority, then AI/human default
+    let coneColor;
+    if (color !== null) {
+        coneColor = color;
+    } else {
+        coneColor = isAI ? 0xFF00FF : 0x00FFFF;  // Purple for AI, Cyan for human
+    }
+    
     const coneGeometry = new THREE.ConeGeometry(0.5, 1, 16, 16);
     const coneMaterial = new THREE.MeshBasicMaterial({ 
-        color: coneColor,  // Use the defined color
+        color: coneColor,  // Use the determined color
         wireframe: true,
         transparent: true,
         opacity: 0.8
