@@ -1,6 +1,6 @@
 // --- APPLICATION CONTROLLER ---
 // This file now acts as the main application controller,
-// coordinating between the Network module and PauseUI module
+// coordinating between the Network module, PauseUI module, and Game
 
 // Legacy global variables for compatibility (reference Network object)
 let myPeerId = null;
@@ -10,6 +10,11 @@ let paired = false;
 let partnerPeerId = null;
 let partnerConn = null;
 let isInitialized = false;
+
+// Initialize all modules when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+  initializeApp();
+});
 
 // Initialize all modules
 function initializeApp() {
@@ -64,6 +69,9 @@ function updateChainLinks() {
 }
 
 // Expose functions globally for HTML onclick handlers
+window.sendMessage = sendMessage;
+window.joinChain = joinChain;
+window.broadcastChain = broadcastChain;
 window.sendMessage = sendMessage;
 window.joinChain = joinChain;
 

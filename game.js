@@ -8,9 +8,25 @@ import { TerrainGenerator } from './terrainGenerator.js'; // Import the new clas
 const canvas = document.getElementById('gameCanvas');
 const startButton = document.getElementById('startButton');
 const menu = document.getElementById('menu');
+const pauseMenu = document.getElementById('pauseMenu');
 const closeMenuButton = document.getElementById('closeMenu');
+const instructions = document.getElementById('instructions');
 const thetaSensitivityInput = document.getElementById('thetaSensitivity');
 const phiSensitivityInput = document.getElementById('phiSensitivity');
+
+// Global state
+let isInstructionsVisible = true;
+let isGamePaused = false;
+let isSettingsOpen = false;
+
+// Global functions for menu controls
+window.resumeGame = function() {
+    isGamePaused = false;
+    pauseMenu.style.display = 'none';
+    if (!document.pointerLockElement) {
+        canvas.requestPointerLock();
+    }
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     startButton.addEventListener('click', () => {
@@ -129,14 +145,30 @@ function initGame() {
 
     document.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
+        
+        // Global hotkeys
         if (key === 'escape') {
-            isMenuOpen = !isMenuOpen;
-            menu.style.display = isMenuOpen ? 'block' : 'none';
-            if (isMenuOpen && isPointerLocked) {
+            isGamePaused = !isGamePaused;
+            pauseMenu.style.display = isGamePaused ? 'block' : 'none';
+            if (isGamePaused && isPointerLocked) {
                 document.exitPointerLock();
+            } else if (!isGamePaused && !isPointerLocked) {
+                canvas.requestPointerLock();
             }
         }
-        if (!isMenuOpen) {
+        
+        if (key === 'f1') {
+            isInstructionsVisible = !isInstructionsVisible;
+            instructions.classList.toggle('hidden', !isInstructionsVisible);
+        }
+        
+        if (key === 'f2') {
+            isSettingsOpen = !isSettingsOpen;
+            menu.style.display = isSettingsOpen ? 'block' : 'none';
+        }
+        
+        // Movement controls only when not paused
+        if (!isGamePaused && !isSettingsOpen) {
             if (key === 'w') moveState.forward = true;
             if (key === 's') moveState.backward = true;
             if (key === 'a') moveState.left = true;
@@ -153,7 +185,7 @@ function initGame() {
     });
 
     closeMenuButton.addEventListener('click', () => {
-        isMenuOpen = false;
+        isSettingsOpen = false;
         menu.style.display = 'none';
         if (!isPointerLocked) {
             canvas.requestPointerLock();
@@ -168,8 +200,8 @@ function initGame() {
         lastTime = currentTime;
         animationTime += deltaTime;
 
-        // Update player position only if menu is closed
-        if (!isMenuOpen) {
+        // Update player position only if not paused
+        if (!isGamePaused && !isSettingsOpen) {
             let direction = new THREE.Vector3();
             camera.getWorldDirection(direction);
             direction.y = 0;
