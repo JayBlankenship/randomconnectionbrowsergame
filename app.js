@@ -72,8 +72,6 @@ function updateChainLinks() {
 window.sendMessage = sendMessage;
 window.joinChain = joinChain;
 window.broadcastChain = broadcastChain;
-window.sendMessage = sendMessage;
-window.joinChain = joinChain;
 
 // Start the application
 initializeApp();

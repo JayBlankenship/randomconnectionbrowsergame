@@ -3,7 +3,7 @@
 // --- NETWORK MODULE ---
 const Network = {
   // Configuration
-  BASE_PEER_ID: 'ChainBootstrap-2025-001',
+  BASE_PEER_ID: 'NeonGameBootstrap-2025-001',
   LOBBY_SIZE: 2, // Change this value to set the number of players required before islanding
   
   // Private state
@@ -41,6 +41,7 @@ const Network = {
   
   // Initialize the network
   init() {
+    console.log('[Network] Starting initialization...');
     this.myPeerId = `ChainNode-${Math.random().toString(36).substr(2, 8)}`;
     this.peer = new Peer(this.myPeerId, {
       host: '0.peerjs.com', port: 443, path: '/', secure: true,
@@ -48,6 +49,7 @@ const Network = {
     });
     
     this.peer.on('open', (id) => {
+      console.log('[Network] Peer opened with ID:', id);
       this.isInitialized = true;
       if (this.callbacks.updateConnectionStatus) {
         this.callbacks.updateConnectionStatus(`Connected as ${this.myPeerId}`);
@@ -74,9 +76,6 @@ const Network = {
               this.callbacks.logChainEvent(`[Host] Checking if ${data.peerId} is already in lobby: ${this.lobbyConnectedPeers.includes(data.peerId)}`);
             }
             
-        if (this.callbacks.logChainEvent) {
-          this.callbacks.logChainEvent(`[Client] Lobby has ${this.LOBBY_SIZE} total players (including host)`);
-        }
             // Direct connection to host - double check lobby status
             if (this.lobbyFull || this.lobbyConnectedPeers.length >= this.LOBBY_SIZE) {
               if (this.callbacks.logChainEvent) {
@@ -89,10 +88,6 @@ const Network = {
               conn.close();
               return;
             }
-            
-        if (this.callbacks.updateConnectionStatus) {
-          this.callbacks.updateConnectionStatus(`Connected to host in ${this.LOBBY_SIZE}-player lobby!`);
-        }
             if (this.lobbyConnectedPeers.length < this.LOBBY_SIZE) {
               // Check if this peer is already in the lobby to prevent duplicates
               if (this.lobbyConnectedPeers.includes(data.peerId)) {
@@ -270,6 +265,14 @@ const Network = {
   },
 
   tryBecomeBase() {
+    console.log('[Network] tryBecomeBase() called');
+    
+    // Clean up any existing basePeer
+    if (this.basePeer) {
+      this.basePeer.destroy();
+      this.basePeer = null;
+    }
+    
     // Try to claim the BASE_PEER_ID directly
     this.basePeer = new Peer(this.BASE_PEER_ID, {
       host: '0.peerjs.com', port: 443, path: '/', secure: true,
@@ -278,6 +281,7 @@ const Network = {
     this.isDiscoveryBasePeer = true;
 
     this.basePeer.on('open', (id) => {
+      console.log('[Network] Successfully claimed BASE_PEER_ID:', id);
       // Successfully claimed the BASE_PEER_ID - we are the host
       this.isBase = true;
       this.retryCount = 0; // Reset retry count on success
@@ -286,18 +290,6 @@ const Network = {
       this.lobbyPeerConnections = {}; // Track all peer connections
       this.lobbyFull = false; // Track if lobby is complete
       this.isDiscoveryBasePeer = false; // Now this basePeer is the real host
-                // Only destroy the discovery basePeer, not the real host's peer instance
-                if (this.isDiscoveryBasePeer && this.basePeer) {
-                  this.basePeer.destroy();
-                  this.basePeer = null;
-                  if (this.callbacks.logChainEvent) {
-                    this.callbacks.logChainEvent(`[Host] Discovery basePeer destroyed.`);
-                  }
-                } else {
-                  if (this.callbacks.logChainEvent) {
-                    this.callbacks.logChainEvent(`[Host] Not destroying real host basePeer instance.`);
-                  }
-                }
       
       if (this.callbacks.logChainEvent) {
         this.callbacks.logChainEvent(`[Base] Became base peer! Initialized lobby with host: ${this.myPeerId}`);
@@ -369,11 +361,18 @@ const Network = {
     });
 
     this.basePeer.on('error', (err) => {
+      console.log('[Network] Failed to claim BASE_PEER_ID, error:', err.type);
       // Failed to claim BASE_PEER_ID - someone else is already the host
       if (this.callbacks.logChainEvent) {
         this.callbacks.logChainEvent(`[Base] BASE_PEER_ID already taken (${err.type}), checking if lobby is available...`, '#ffaa00');
       }
       this.isBase = false;
+      
+      // Clean up the failed basePeer
+      if (this.basePeer) {
+        this.basePeer.destroy();
+        this.basePeer = null;
+      }
       
       // Try to join existing lobby first
       setTimeout(() => {
@@ -383,6 +382,7 @@ const Network = {
   },
 
   joinChain() {
+    console.log('[Network] joinChain() called');
     if (this.callbacks.updateConnectionStatus) {
       this.callbacks.updateConnectionStatus('Discovering lobby...');
     }
@@ -391,6 +391,7 @@ const Network = {
     this.baseConn = this.peer.connect(this.BASE_PEER_ID);
 
     this.baseConn.on('open', () => {
+      console.log('[Network] Discovery connection opened, sending join request');
       this.baseConn.send({ type: 'join', peerId: this.myPeerId });
       if (this.callbacks.logChainEvent) {
         this.callbacks.logChainEvent(`[Discovery] Sent discovery request to base`);
@@ -450,12 +451,19 @@ const Network = {
     });
 
     this.baseConn.on('error', (err) => {
+      console.log('[Network] Discovery connection error:', err.type);
       if (this.callbacks.updateConnectionStatus) {
         this.callbacks.updateConnectionStatus('Failed to discover lobby');
       }
       if (this.callbacks.logChainEvent) {
         this.callbacks.logChainEvent(`[Discovery] Error: ${err.message}`, '#ff4444');
       }
+      
+      // If the discovery connection fails, try to become base after a delay
+      setTimeout(() => {
+        console.log('[Network] Retrying to become base due to discovery failure');
+        this.tryBecomeBase();
+      }, 3000);
     });
   },
   
