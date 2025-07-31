@@ -103,7 +103,7 @@ function initGame() {
     }
 
     // Create multiple AI players
-    const numberOfAIPlayers = 8; // Set this to your desired number
+    const numberOfAIPlayers = 0; // Set this to your desired number
     const aiPlayers = []; // Array to store all AI players
 
     for (let i = 0; i < numberOfAIPlayers; i++) {
@@ -134,6 +134,19 @@ function initGame() {
 
     // Initialize TerrainGenerator
     const terrainGenerator = new TerrainGenerator(scene, planeSize, planeGeometry, planeMaterial);
+
+    // Set up terrain networking callback after terrainGenerator is created
+    if (window.Network) {
+        // Handle incoming terrain changes from other clients
+        window.Network.callbacks.handleTerrainChanges = (peerId, changes) => {
+            console.log(`[Game] Received terrain changes from ${peerId}:`, changes);
+            try {
+                terrainGenerator.applyTerrainChanges(changes);
+            } catch (error) {
+                console.error('[Game] Error applying terrain changes:', error);
+            }
+        };
+    }
 
     // Initial camera position
     camera.position.set(0, 5, -10);
@@ -305,30 +318,84 @@ function initGame() {
             // Update red networked players (animate them smoothly)
             networkedPlayerManager.update(deltaTime, animationTime);
 
+            // Broadcast terrain changes to other players if we're in a complete lobby
+            if (window.Network && window.Network.isInCompleteLobby && window.Network.isInCompleteLobby() && terrainGenerator && typeof terrainGenerator.getTerrainChanges === 'function') {
+                try {
+                    // Get terrain changes from this frame
+                    const terrainChanges = terrainGenerator.getTerrainChanges();
+                    
+                    // Only broadcast if there are actual changes and throttle to prevent spam
+                    if (terrainChanges && (terrainChanges.newPlanes.length > 0 || terrainChanges.removedPlanes.length > 0)) {
+                        // Throttle terrain broadcasts to prevent network spam (every 500ms for safety)
+                        const now = Date.now();
+                        if (!window.lastTerrainUpdate || now - window.lastTerrainUpdate > 500) {
+                            // Limit the number of changes per broadcast
+                            const maxChangesPerUpdate = 10;
+                            const limitedChanges = {
+                                newPlanes: terrainChanges.newPlanes.slice(0, maxChangesPerUpdate),
+                                removedPlanes: terrainChanges.removedPlanes.slice(0, maxChangesPerUpdate)
+                            };
+                            
+                            console.log(`[Game] Broadcasting terrain changes:`, limitedChanges);
+                            window.Network.broadcastTerrainChanges(limitedChanges);
+                            window.lastTerrainUpdate = now;
+                        }
+                    }
+                } catch (error) {
+                    console.error('[Game] Error during terrain broadcasting:', error);
+                }
+            }
+
             // Update all AI players
             aiPlayers.forEach(aiPlayer => {
                 aiPlayer.updateAI(deltaTime, animationTime);
-                // Generate planes around each AI
-                terrainGenerator.generateNeighboringPlanes(aiPlayer.position);
+                // Generate planes around each AI (with safety check)
+                if (terrainGenerator && typeof terrainGenerator.generateNeighboringPlanes === 'function') {
+                    terrainGenerator.generateNeighboringPlanes(aiPlayer.position);
+                }
             });
 
             // Generate new planes for both player and AI
-            terrainGenerator.generateNeighboringPlanes(playerPawn.position);
-            
-            // Generate terrain around red networked players too
-            /*
-            const networkedPlayerPositions = networkedPlayerManager.getAllPositions();
-            networkedPlayerPositions.forEach(position => {
-                terrainGenerator.generateNeighboringPlanes(position);
-            });
+            if (terrainGenerator && typeof terrainGenerator.generateNeighboringPlanes === 'function') {
+                terrainGenerator.generateNeighboringPlanes(playerPawn.position);
+                
+                // Generate terrain around red networked players too
+                try {
+                    const networkedPlayerPositions = networkedPlayerManager.getAllPositions();
+                    if (networkedPlayerPositions.length > 0 && networkedPlayerPositions.length < 10) { // Safety limit
+                        networkedPlayerPositions.forEach(position => {
+                            if (position && position.x !== undefined && position.z !== undefined) {
+                                terrainGenerator.generateNeighboringPlanes(position);
+                            }
+                        });
 
-            // Remove distant planes (check distance to player, AIs, and networked players)
-            const allPositions = [playerPawn.position, ...aiPlayers.map(ai => ai.position), ...networkedPlayerPositions];
-            terrainGenerator.removeDistantPlanes(playerPawn.position, aiPlayers.concat(networkedPlayerPositions));
-            */
-
-            // Remove distant planes (check distance to player and all AIs)
-            terrainGenerator.removeDistantPlanes(playerPawn.position, aiPlayers);
+                        // Remove distant planes (check distance to player, AIs, and networked players)
+                        // Create a combined array of all entities for distance checking
+                        const allEntities = [...aiPlayers];
+                        networkedPlayerPositions.forEach(pos => {
+                            if (pos && pos.x !== undefined && pos.z !== undefined) {
+                                allEntities.push({ position: pos });
+                            }
+                        });
+                        if (typeof terrainGenerator.removeDistantPlanes === 'function') {
+                            terrainGenerator.removeDistantPlanes(playerPawn.position, allEntities);
+                        }
+                    } else {
+                        // Fallback to just player and AI if networked players seem invalid
+                        if (typeof terrainGenerator.removeDistantPlanes === 'function') {
+                            terrainGenerator.removeDistantPlanes(playerPawn.position, aiPlayers);
+                        }
+                    }
+                } catch (error) {
+                    console.error('[Game] Error with networked player terrain:', error);
+                    // Fallback to just player and AI terrain
+                    if (typeof terrainGenerator.removeDistantPlanes === 'function') {
+                        terrainGenerator.removeDistantPlanes(playerPawn.position, aiPlayers);
+                    }
+                }
+            } else {
+                console.warn('[Game] terrainGenerator not available or missing methods');
+            }
 
             // Update camera based on mouse movement
             if (isPointerLocked && (mouseX !== 0 || mouseY !== 0)) {

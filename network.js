@@ -583,6 +583,20 @@ const Network = {
       }
     }
     
+    if (data.type === 'terrain_state') {
+      // Handle incoming terrain changes
+      if (data.peerId !== this.myPeerId) { // Don't process our own terrain changes
+        if (this.callbacks.handleTerrainChanges) {
+          this.callbacks.handleTerrainChanges(data.peerId, data.changes);
+        }
+        
+        // Relay to other peers if we're the host
+        if (this.isBase) {
+          this.relayTerrainChanges(data, conn ? conn.peer : null);
+        }
+      }
+    }
+    
     // Note: host_ready is handled in joinChain() baseConn.on('data') callback
     // Don't duplicate that logic here to avoid conflicts
   },
@@ -895,6 +909,71 @@ const Network = {
   // Check if we're in a complete lobby
   isInCompleteLobby() {
     return this.paired || (this.isBase && this.lobbyFull);
+  },
+
+  // --- TERRAIN SYNCHRONIZATION ---
+  
+  // Send terrain changes to all connected peers
+  broadcastTerrainChanges(terrainChanges) {
+    if (!this.paired && !this.isBase) return;
+    
+    const terrainMessage = {
+      type: 'terrain_state',
+      peerId: this.myPeerId,
+      changes: terrainChanges,
+      timestamp: Date.now()
+    };
+    
+    // If we're the host, send to all connected clients
+    if (this.isBase && this.lobbyPeerConnections) {
+      for (const [peerId, conn] of Object.entries(this.lobbyPeerConnections)) {
+        if (conn && conn.open) {
+          try {
+            conn.send(terrainMessage);
+          } catch (error) {
+            console.warn(`[Network] Failed to send terrain changes to ${peerId}:`, error);
+          }
+        }
+      }
+    }
+    
+    // If we're a client, send to host (host will relay to other clients)
+    if (!this.isBase) {
+      const hostConnection = this.hostConn || this.baseConn;
+      if (hostConnection && hostConnection.open) {
+        try {
+          hostConnection.send(terrainMessage);
+        } catch (error) {
+          console.warn(`[Network] Failed to send terrain changes to host:`, error);
+        }
+      }
+    }
+  },
+
+  // Relay terrain state to other peers (host only)
+  relayTerrainChanges(data, fromPeer) {
+    if (this.callbacks.logChainEvent) {
+      this.callbacks.logChainEvent(`[Relay] Relaying terrain changes from ${data.peerId}, fromPeer: ${fromPeer}`);
+    }
+    
+    // If we're the host (center of star), relay to all clients except the sender
+    if (this.isBase && this.lobbyPeerConnections) {
+      let relayCount = 0;
+      for (const [peerId, conn] of Object.entries(this.lobbyPeerConnections)) {
+        // Don't send back to the sender, and only send to open connections
+        if (peerId !== fromPeer && conn && conn.open) {
+          try {
+            conn.send(data);
+            relayCount++;
+          } catch (error) {
+            console.warn(`[Network] Failed to relay terrain changes to ${peerId}:`, error);
+          }
+        }
+      }
+      if (this.callbacks.logChainEvent) {
+        this.callbacks.logChainEvent(`[Relay] Relayed terrain changes to ${relayCount} peers`);
+      }
+    }
   }
 };
 
